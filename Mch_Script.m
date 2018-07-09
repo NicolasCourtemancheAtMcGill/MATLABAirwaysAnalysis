@@ -104,7 +104,7 @@ for Foldernumber = 3:42
                 svcCell(1) = sortedMoments(i_fnum2);
                 svcCell(2) = sortedMoments_svc(1);
                 [~, svcCell_indexes] = sort(svcCell);
-                if svcCell_indexes(1) == 2
+                if svcCell_indexes(1) == 2;
                     i_stop = i_fnum2;
                     clear svcCell svcCell_indexes
                     break
@@ -122,7 +122,111 @@ for Foldernumber = 3:42
         for i_fnum3 = 1:i_stop
             sorted_Files_complete(i_fnum3) = Files_complete(indexes(i_fnum3)).data;
         end
-        %
+		%% SMALL VERSION
+		%
+		%
+		from = [1 6000 12000 24000 30000];
+		to = [6000 12000 24000 30000 42100];
+		smallFrequencies = zeros(1,(5*length(sorted_Files_complete)));
+		smallAmplitudes = zeros(1,(5*length(sorted_Files_complete)));
+		for ii = 1: length(sorted_Files_complete)
+			for iii = 1:5
+				Force01 = sorted_Files_complete(ii).Fin;
+				if iii == 5
+					ender = length(Force01);
+				else
+					ender = to(iii);
+				end
+				Force = Force01(from(iii):ender);
+					
+				[a,~]=xcorr(smooth(Force)-mean(Force));
+				% the max(s) of a are the peaks, loc3 contains the locations
+				% of the peaks in the Force vector
+				[max1, loc3] = max(a);
+				searching=true;
+				v=loc3;
+				% the box
+				% sets a "box" of 500 measure units after the first peak
+				% searches for the nearest local maximum in that range
+				% the distance between the two peaks (peakdistance) is the period
+				%
+				while searching == true
+					[max2, loc2] = max(a(v:(v+500)));
+					% the peak must be at least 10 units from the edges of the box,
+					% otherwise it cannot be considered a peak	
+					if loc2 > 10 & loc2 < 490
+						loc4 = v;
+						searching=false;
+					end
+					v=v+1;
+					if v>length(a)-505
+						searching=false;
+						loc4=loc3;
+					end
+				end
+				% may be referred to as "period" 
+				peakdistance = loc2;
+				% period of 0 is not a period
+				% period above 10k is not a frequency we are looking for		
+				if peakdistance>0 & peakdistance<10000
+					Frequency = 1/(peakdistance/100);
+					% MOVING AVERAGE
+					% will be used to remove the baseline drift from the Force signal
+					% Force2 is the signal balanced around 0	
+					for i=[1:length(Force)-peakdistance]
+						means(i)=mean(Force(i:round(i+peakdistance)));
+						Force2(i)= Force(round(i+0.5*peakdistance))-mean(Force(i:round(i+peakdistance)));
+					end
+					% rms (root mean square) makes the function positive to get the amplitude 
+					Amplitude = rms(Force2);
+				else
+					Frequency = 0;
+
+					peakdistance=3500;
+					for i=[1:length(Force)-peakdistance]
+						means(i)=mean(Force(i:round(i+peakdistance)));
+						Force2(i)= Force(round(i+0.5*peakdistance))-mean(Force(i:round(i+peakdistance)));
+					end
+
+				end
+				% Second Run for adjusted frequency
+				% exact same thing as past block
+				% Force2 is re-smoothed to try and get an even better frequency
+				% sometimes is useful, sometimes not
+				[a,b]=xcorr(smooth(Force2)-mean(Force2));
+				[max1, loc3] = max(a);
+				searching=true;
+				v=loc3;
+				peakdistance=0;
+				while searching == true
+
+				   [max2, loc2] = max(a(v:(v+500)));
+					if loc2 > 10 & loc2 < 490
+						loc4 = v;
+						searching=false;
+					end
+					v=v+1;
+					if v>length(a)-505
+						searching=false;
+						loc4=loc3;
+					end
+				end
+				peakdistance = loc2;
+
+				if peakdistance>0
+					Frequency = 1/(peakdistance/100);
+				else
+					Frequency = 0;
+					Amplitude = 0;
+				end
+				Amplitude = rms(Force2);
+				smallFrequencies(((ii-1)*5)+iii) = Frequency;
+				smallAmplitudes(((ii-1)*5)+iii) = Amplitude;
+				clear Force01 Force a max1 loc3 v max2 loc2 loc4 peakdistance Frequency means i Force2 Amplitude
+			end
+		end
+        %% COMPLETE VERSION
+		%
         % If there is more than one MCh file, appending them together to
         % make the "Force" file. Otherwise Force will only contain one.
         %
@@ -266,17 +370,32 @@ for Foldernumber = 3:42
         %
 		% saving the documents
 		%
-		saveas(h,['C:\Nicolas\LungDataTesting_2\' TitleArray{2} '.png'])
-        [~,~,C]=xlsread('C:\Nicolas\DataTesting_2.xlsx');
-        C(end+1,1:3)={[Dummy{3} ' ' Dummy{5}], Frequency,Amplitude};
-        xlswrite('C:\Nicolas\DataTesting_2.xlsx',C)
+		saveas(h,['C:\Nicolas\LungDataTesting_3\' TitleArray{2} '.png'])
+        [~,~,C]=xlsread('C:\Nicolas\DataTesting_3.xlsx');
+        clear rows columns
+        %         -          freq storing
+        for rows = 1:(length(smallFrequencies)/5)
+            C(end+1, 1:2) = {[Dummy{3} ' ' Dummy{5}], 'f'};
+            for columns = 1:5
+                C(end, columns+2) = {smallFrequencies(((rows-1)*5)+columns)};
+            end
+        end
+        clear rows columns
+        %         -          amp storing
+        for rows = 1:(length(smallAmplitudes)/5)
+            C(end+1, 1:2) = {[Dummy{3} ' ' Dummy{5}], 'A'};
+            for columns = 1:5
+                C(end, columns+2) = {smallAmplitudes(((rows-1)*5)+columns)};
+            end
+        end
+        xlswrite('C:\Nicolas\DataTesting_3.xlsx',C)
         %
         % Clearing for next loop
         % THIS SHOULD BE AT THE END OF THE LOOP
         clear Files_complete Force i sorted_Files_complete unsortedMoments sortedMoments indexes Force2 current_tissue;
         clear name_withvar Files_pre a loc3 v max2 loc2 loc4 peakdistance Frequency means Amplitude max1 path;
         clear name_withvar_svc Files_pre_svc i_fnum_svc Files_complete_svc i_fnum2_svc unsortedMoments_svc sortedMoments_svc;
-        clear indexes_svc i_stop;
+        clear indexes_svc i_stop ii iii smallFrequencies smallAmplitudes C;
     end
     
 end
